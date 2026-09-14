@@ -1,6 +1,18 @@
-import { ARENA_BOXES, ARENA_HALF_SIZE, PLAYER_RADIUS, type ArenaBox } from '@shootme/shared';
+import { PLAYER_RADIUS, type ArenaBox } from '@shootme/shared';
 
 const STAND_TOLERANCE = 0.12;
+
+// The client only ever has one map active per tab (unlike the server, which runs
+// one Room per map concurrently in the same process), so a module-level "current
+// map" is safe here — set once by Game at startup instead of importing a single
+// hardcoded arena.
+let activeBoxes: ArenaBox[] = [];
+let activeHalfSize = 30;
+
+export function setActiveMap(boxes: ArenaBox[], halfSize: number) {
+  activeBoxes = boxes;
+  activeHalfSize = halfSize;
+}
 
 export interface MoveState {
   x: number;
@@ -23,7 +35,7 @@ function xzOverlap(x: number, z: number, box: ArenaBox, margin: number): boolean
 /** Highest walkable surface (box top or ground) under point (x,z) reachable from feetY. */
 export function groundHeightAt(x: number, z: number, feetY: number): number {
   let best = 0;
-  for (const box of ARENA_BOXES) {
+  for (const box of activeBoxes) {
     if (!xzOverlap(x, z, box, 0)) continue;
     const top = boxTop(box);
     if (feetY >= top - STAND_TOLERANCE && top > best) {
@@ -38,7 +50,7 @@ export function resolveHorizontal(x: number, z: number, feetY: number): { x: num
   let nx = x;
   let nz = z;
 
-  for (const box of ARENA_BOXES) {
+  for (const box of activeBoxes) {
     const top = boxTop(box);
     // If the player's feet are at/above this box's roof, they're standing on it (or above) — no wall collision.
     if (feetY >= top - STAND_TOLERANCE) continue;
@@ -63,7 +75,7 @@ export function resolveHorizontal(x: number, z: number, feetY: number): { x: num
     else nz = maxZ;
   }
 
-  const clampMax = ARENA_HALF_SIZE - PLAYER_RADIUS;
+  const clampMax = activeHalfSize - PLAYER_RADIUS;
   nx = Math.max(-clampMax, Math.min(clampMax, nx));
   nz = Math.max(-clampMax, Math.min(clampMax, nz));
 

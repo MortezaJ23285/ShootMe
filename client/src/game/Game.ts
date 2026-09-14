@@ -9,11 +9,13 @@ import {
   type PlayerPublicState,
   type Vec3,
   type WeaponId,
+  type MapData,
 } from '@shootme/shared';
 import { NetClient } from '../network/NetClient.js';
 import { UIManager } from '../ui/UIManager.js';
 import { SoundManager } from '../audio/SoundManager.js';
 import { buildArena, setupLighting } from '../maps/ArenaBuilder.js';
+import { setActiveMap } from '../physics/collision.js';
 import { LocalController } from '../entities/LocalController.js';
 import { RemotePlayer } from '../entities/RemotePlayer.js';
 import type { WeaponView } from '../weapons/WeaponView.js';
@@ -66,10 +68,14 @@ export class Game {
     private net: NetClient,
     private ui: UIManager,
     private onExitToMenu: () => void,
+    private mapData: MapData,
   ) {
-    this.camera = new THREE.PerspectiveCamera(78, window.innerWidth / window.innerHeight, 0.05, 200);
+    // Far plane and fog/shadow distances (set in ArenaBuilder) both scale with the
+    // chosen map's size — this covers the largest map (halfSize ~85) with margin.
+    this.camera = new THREE.PerspectiveCamera(78, window.innerWidth / window.innerHeight, 0.05, 400);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // No pixel-ratio cap — this game targets visual fidelity over minimum GPU support.
+    this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -78,8 +84,9 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
 
-    setupLighting(this.scene);
-    buildArena(this.scene);
+    setActiveMap(mapData.boxes, mapData.halfSize);
+    setupLighting(this.scene, mapData.halfSize);
+    buildArena(this.scene, mapData);
     this.scene.add(this.camera); // weapon view-models are parented to the camera
 
     // A cheap procedural environment map so metallic PBR materials (weapon parts,

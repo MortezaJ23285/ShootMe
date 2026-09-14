@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { BaseWeaponView } from './WeaponView.js';
 import { getWeaponGrungeTexture } from './weaponTexture.js';
 
@@ -20,32 +21,44 @@ export class ShotgunView extends BaseWeaponView {
     const gripMat = new THREE.MeshStandardMaterial({ color: 0x3d332a, roughness: 0.85, metalness: 0.05 });
     const pumpMat = new THREE.MeshStandardMaterial({ color: 0x4a3e30, roughness: 0.8, metalness: 0.05 });
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.16, 0.4), bodyMat);
+    const body = new THREE.Mesh(new RoundedBoxGeometry(0.15, 0.16, 0.4, 3, 0.02), bodyMat);
     body.position.set(0, 0, -0.1);
     this.group.add(body);
 
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 10), metalMat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 24), metalMat);
     barrel.rotation.x = Math.PI / 2;
     barrel.position.set(0, 0.03, -0.5);
     this.group.add(barrel);
 
+    const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.008, 8, 20), metalMat);
+    muzzleRing.position.set(0, 0.03, -0.7);
+    this.group.add(muzzleRing);
+
     this.pumpBaseZ = -0.4;
-    this.pump = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.16, 10), pumpMat);
+    this.pump = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.16, 20), pumpMat);
     this.pump.rotation.x = Math.PI / 2;
     this.pump.position.set(0, -0.02, this.pumpBaseZ);
     this.group.add(this.pump);
 
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.14, 0.22), gripMat);
+    // Ridged grip pattern on the pump for a more tactile silhouette.
+    for (let i = -1; i <= 1; i++) {
+      const ridge = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.004, 6, 16), pumpMat);
+      ridge.rotation.y = Math.PI / 2;
+      ridge.position.set(0, -0.02, this.pumpBaseZ + i * 0.04);
+      this.group.add(ridge);
+    }
+
+    const stock = new THREE.Mesh(new RoundedBoxGeometry(0.11, 0.14, 0.22, 3, 0.02), gripMat);
     stock.position.set(0, -0.02, 0.16);
     this.group.add(stock);
 
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.1), gripMat);
+    const grip = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.2, 0.1, 3, 0.02), gripMat);
     grip.position.set(0, -0.13, 0.02);
     this.group.add(grip);
 
     const accentColor = 0xff8a3d;
     const accent = new THREE.Mesh(
-      new THREE.BoxGeometry(0.05, 0.05, 0.02),
+      new RoundedBoxGeometry(0.05, 0.05, 0.02, 2, 0.006),
       new THREE.MeshStandardMaterial({ color: accentColor, emissive: accentColor, emissiveIntensity: 1.2 }),
     );
     accent.position.set(0, 0.045, -0.68);

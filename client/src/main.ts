@@ -1,3 +1,4 @@
+import { MAPS, type MapId } from '@shootme/shared';
 import { UIManager } from './ui/UIManager.js';
 import { NetClient, resolveServerUrl } from './network/NetClient.js';
 import { Game } from './game/Game.js';
@@ -14,7 +15,7 @@ ui.showLanding();
 let net: NetClient | null = null;
 let game: Game | null = null;
 
-async function joinGame(name: string) {
+async function joinGame(name: string, mapId: MapId) {
   ui.showConnecting('Connecting to server...');
   net = new NetClient();
 
@@ -22,14 +23,14 @@ async function joinGame(name: string) {
     await net.connect(resolveServerUrl());
   } catch {
     ui.showConnecting('Could not reach server. Retrying...');
-    setTimeout(() => joinGame(name), 1500);
+    setTimeout(() => joinGame(name, mapId), 1500);
     return;
   }
 
   ui.showConnecting('Joining arena...');
 
   net.on('welcome', (msg) => {
-    game = new Game(canvasWrap, net!, ui, returnToMenu);
+    game = new Game(canvasWrap, net!, ui, returnToMenu, MAPS[msg.mapId]);
     game.start(msg.players, msg.id, name, msg.matchEndsAt);
   });
 
@@ -38,7 +39,7 @@ async function joinGame(name: string) {
     else ui.showConnecting('Disconnected from server.');
   });
 
-  net.send({ t: 'join', name });
+  net.send({ t: 'join', name, mapId });
 }
 
 function returnToMenu() {
@@ -49,7 +50,7 @@ function returnToMenu() {
   ui.showLanding();
 }
 
-ui.onPlay((name) => joinGame(name));
+ui.onPlay((name, mapId) => joinGame(name, mapId));
 ui.onPlayAgain(() => {
   // The server auto-restarts the match; just re-show the HUD.
   ui.showHUD();

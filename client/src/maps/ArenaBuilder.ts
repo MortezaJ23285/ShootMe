@@ -1,9 +1,12 @@
 import * as THREE from 'three';
-import { ARENA_BOXES, ARENA_HALF_SIZE } from '@shootme/shared';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import type { MapData } from '@shootme/shared';
 
-export function buildArena(scene: THREE.Scene) {
+export function buildArena(scene: THREE.Scene, map: MapData) {
+  const halfSize = map.halfSize;
+
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(ARENA_HALF_SIZE * 2 + 10, ARENA_HALF_SIZE * 2 + 10),
+    new THREE.PlaneGeometry(halfSize * 2 + 10, halfSize * 2 + 10),
     new THREE.MeshStandardMaterial({ color: 0x7fb069, roughness: 1 }),
   );
   ground.rotation.x = -Math.PI / 2;
@@ -11,18 +14,19 @@ export function buildArena(scene: THREE.Scene) {
   scene.add(ground);
 
   // Subtle grid for visual scale reference without a texture.
-  const grid = new THREE.GridHelper(ARENA_HALF_SIZE * 2, 20, 0x5f9455, 0x5f9455);
+  const grid = new THREE.GridHelper(halfSize * 2, Math.round(halfSize / 1.5), 0x5f9455, 0x5f9455);
   (grid.material as THREE.Material).opacity = 0.25;
   (grid.material as THREE.Material).transparent = true;
   scene.add(grid);
 
-  const boxGeoCache = new Map<string, THREE.BoxGeometry>();
+  const boxGeoCache = new Map<string, THREE.BufferGeometry>();
 
-  for (const box of ARENA_BOXES) {
+  for (const box of map.boxes) {
     const key = `${box.sx}_${box.sy}_${box.sz}`;
     let geo = boxGeoCache.get(key);
     if (!geo) {
-      geo = new THREE.BoxGeometry(box.sx, box.sy, box.sz);
+      const bevel = Math.min(0.08, box.sx, box.sy, box.sz) * 0.15;
+      geo = new RoundedBoxGeometry(box.sx, box.sy, box.sz, 2, bevel);
       boxGeoCache.set(key, geo);
     }
     const mat = new THREE.MeshStandardMaterial({ color: box.color, roughness: 0.8, metalness: 0.05 });
@@ -37,12 +41,12 @@ export function buildArena(scene: THREE.Scene) {
   const wallHeight = 4;
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.9 });
   const wallThickness = 1;
-  const half = ARENA_HALF_SIZE + wallThickness / 2;
+  const half = halfSize + wallThickness / 2;
   const positions: [number, number, number, number][] = [
-    [0, half, ARENA_HALF_SIZE * 2 + wallThickness, wallThickness],
-    [0, -half, ARENA_HALF_SIZE * 2 + wallThickness, wallThickness],
-    [half, 0, wallThickness, ARENA_HALF_SIZE * 2 + wallThickness],
-    [-half, 0, wallThickness, ARENA_HALF_SIZE * 2 + wallThickness],
+    [0, half, halfSize * 2 + wallThickness, wallThickness],
+    [0, -half, halfSize * 2 + wallThickness, wallThickness],
+    [half, 0, wallThickness, halfSize * 2 + wallThickness],
+    [-half, 0, wallThickness, halfSize * 2 + wallThickness],
   ];
   for (const [x, z, sx, sz] of positions) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, wallHeight, sz), wallMat);
@@ -51,19 +55,22 @@ export function buildArena(scene: THREE.Scene) {
   }
 }
 
-export function setupLighting(scene: THREE.Scene) {
+export function setupLighting(scene: THREE.Scene, halfSize = 30) {
   const hemi = new THREE.HemisphereLight(0xbfe3ff, 0x4a5f3a, 0.9);
   scene.add(hemi);
 
+  // Shadow-camera bounds scale with the map so shadows cover the whole play area
+  // on the biggest maps, not just a fixed radius sized for the original arena.
+  const shadowExtent = halfSize + 15;
   const sun = new THREE.DirectionalLight(0xfff4e0, 1.3);
-  sun.position.set(30, 45, 20);
+  sun.position.set(shadowExtent, shadowExtent * 1.5, shadowExtent * 0.7);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -45;
-  sun.shadow.camera.right = 45;
-  sun.shadow.camera.top = 45;
-  sun.shadow.camera.bottom = -45;
-  sun.shadow.camera.far = 120;
+  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.camera.left = -shadowExtent;
+  sun.shadow.camera.right = shadowExtent;
+  sun.shadow.camera.top = shadowExtent;
+  sun.shadow.camera.bottom = -shadowExtent;
+  sun.shadow.camera.far = shadowExtent * 3;
   scene.add(sun);
 
   // Low-intensity fill light from the opposite side so ACES tone mapping (which
@@ -73,5 +80,7 @@ export function setupLighting(scene: THREE.Scene) {
   scene.add(fill);
 
   scene.background = new THREE.Color(0xaee1ff);
-  scene.fog = new THREE.Fog(0xaee1ff, 45, 95);
+  // Fog distance scales with the map so far edges of the biggest maps aren't
+  // swallowed by a fog band tuned for the original, much smaller arena.
+  scene.fog = new THREE.Fog(0xaee1ff, halfSize * 1.5, halfSize * 3.2);
 }

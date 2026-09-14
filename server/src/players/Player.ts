@@ -1,14 +1,9 @@
 import type { WebSocket } from 'ws';
 import { PLAYER_MAX_HEALTH, WEAPONS, WEAPON_IDS, DEFAULT_WEAPON_ID, type Vec3, type WeaponId } from '@shootme/shared';
 
-const NAME_COLORS = [0xd97757, 0x6fbf8b, 0xe8c15a, 0x7ea6d9, 0xc98bd6, 0xef7f9a, 0x7fd6c9, 0xf0a15a];
-let colorCursor = 0;
-
-export function nextColor(): number {
-  const c = NAME_COLORS[colorCursor % NAME_COLORS.length];
-  colorCursor++;
-  return c;
-}
+// Kept per-Room (not module-level) so color cycling doesn't visibly desync across
+// concurrently running map rooms — see `Room.nextColor`.
+export const NAME_COLORS = [0xd97757, 0x6fbf8b, 0xe8c15a, 0x7ea6d9, 0xc98bd6, 0xef7f9a, 0x7fd6c9, 0xf0a15a];
 
 export class Player {
   id: string;

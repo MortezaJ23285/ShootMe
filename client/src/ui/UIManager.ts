@@ -1,4 +1,4 @@
-import { WEAPONS, WEAPON_IDS, DEFAULT_WEAPON_ID, PLAYER_MAX_HEALTH, type WeaponId } from '@shootme/shared';
+import { WEAPONS, WEAPON_IDS, DEFAULT_WEAPON_ID, PLAYER_MAX_HEALTH, MAPS, MAP_IDS, type WeaponId, type MapId } from '@shootme/shared';
 
 const WEAPON_KEY_HINT: Record<WeaponId, string> = { rifle: '1', shotgun: '2', pistol: '3' };
 const WEAPON_SHORT_NAME: Record<WeaponId, string> = { rifle: 'RIFLE', shotgun: 'SHOTGUN', pistol: 'PISTOL' };
@@ -13,7 +13,9 @@ export interface LeaderboardRow {
 export class UIManager {
   private root: HTMLElement;
   private landing!: HTMLElement;
+  private mapSelect!: HTMLElement;
   private connecting!: HTMLElement;
+  private pendingName = '';
   private hud!: HTMLElement;
   private deathOverlay!: HTMLElement;
   private matchEndOverlay!: HTMLElement;
@@ -33,6 +35,7 @@ export class UIManager {
   constructor(root: HTMLElement) {
     this.root = root;
     this.buildLanding();
+    this.buildMapSelect();
     this.buildConnecting();
     this.buildHUD();
     this.buildDeathOverlay();
@@ -65,6 +68,51 @@ export class UIManager {
     if (stored) input.value = stored;
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.root.querySelector<HTMLButtonElement>('#play-btn')!.click();
+    });
+
+    el.querySelector('#play-btn')!.addEventListener('click', () => {
+      const name = input.value.trim() || `Player${Math.floor(Math.random() * 1000)}`;
+      localStorage.setItem('voltbreak_name', name);
+      this.pendingName = name;
+      this.showMapSelect();
+    });
+  }
+
+  private buildMapSelect() {
+    const el = document.createElement('div');
+    el.className = 'overlay';
+    el.id = 'map-select';
+    el.style.display = 'none';
+    el.innerHTML = `
+      <div class="panel map-select-panel">
+        <div class="logo" style="font-size:30px;">CHOOSE A MAP</div>
+        <div class="tagline">Players who pick the same map play together</div>
+        <div class="map-grid" id="map-grid">
+          ${MAP_IDS.map((id) => {
+            const map = MAPS[id];
+            const accent = mapAccentColor(id);
+            return `
+            <button class="map-card" data-map="${id}" style="--map-accent:#${accent.toString(16).padStart(6, '0')}">
+              <div class="map-card-swatch"></div>
+              <div class="map-card-name">${escapeHtml(map.name)}</div>
+              <div class="map-card-size">${sizeLabel(map.halfSize)}</div>
+            </button>`;
+          }).join('')}
+        </div>
+        <div>
+          <button id="map-back-btn" class="secondary">BACK</button>
+        </div>
+      </div>`;
+    this.root.appendChild(el);
+    this.mapSelect = el;
+
+    el.querySelector('#map-back-btn')!.addEventListener('click', () => this.showLanding());
+
+    el.querySelectorAll<HTMLButtonElement>('.map-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        const mapId = card.dataset.map as MapId;
+        this.playCb?.(this.pendingName, mapId);
+      });
     });
   }
 
@@ -178,13 +226,10 @@ export class UIManager {
     this.damageFlash = el;
   }
 
-  onPlay(cb: (name: string) => void) {
-    this.landing.querySelector('#play-btn')!.addEventListener('click', () => {
-      const input = this.landing.querySelector<HTMLInputElement>('#name-input')!;
-      const name = input.value.trim() || `Player${Math.floor(Math.random() * 1000)}`;
-      localStorage.setItem('voltbreak_name', name);
-      cb(name);
-    });
+  private playCb: ((name: string, mapId: MapId) => void) | null = null;
+
+  onPlay(cb: (name: string, mapId: MapId) => void) {
+    this.playCb = cb;
   }
 
   onPlayAgain(cb: () => void) {
@@ -197,14 +242,21 @@ export class UIManager {
 
   showLanding() {
     this.landing.style.display = 'flex';
+    this.mapSelect.style.display = 'none';
     this.connecting.style.display = 'none';
     this.hud.classList.remove('active');
     this.deathOverlay.style.display = 'none';
     this.matchEndOverlay.style.display = 'none';
   }
 
+  showMapSelect() {
+    this.landing.style.display = 'none';
+    this.mapSelect.style.display = 'flex';
+  }
+
   showConnecting(status: string) {
     this.landing.style.display = 'none';
+    this.mapSelect.style.display = 'none';
     this.connecting.style.display = 'flex';
     this.connecting.querySelector('#connect-status')!.textContent = status;
   }
@@ -322,4 +374,19 @@ function escapeHtml(str: string): string {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// A representative accent color per map card — the tallest box in the layout
+// tends to be its most visually defining structure (tower/fortress/building).
+function mapAccentColor(id: MapId): number {
+  const boxes = MAPS[id].boxes;
+  if (boxes.length === 0) return 0x8a9bb0;
+  return boxes.reduce((tallest, b) => (b.sy > tallest.sy ? b : tallest), boxes[0]).color;
+}
+
+function sizeLabel(halfSize: number): string {
+  if (halfSize <= 35) return 'Small';
+  if (halfSize <= 50) return 'Medium';
+  if (halfSize <= 65) return 'Large';
+  return 'Huge';
 }

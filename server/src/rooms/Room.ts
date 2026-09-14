@@ -1,40 +1,21 @@
 import type { WebSocket } from 'ws';
 import {
-  ARENA_HALF_SIZE,
   KILL_LIMIT,
   MATCH_DURATION_MS,
   NETWORK,
   RESPAWN_DELAY_MS,
-  SPAWN_POINTS,
   WEAPONS,
+  MAPS,
   type ClientMessage,
   type PlayerPublicState,
   type ServerMessage,
   type Vec3,
   type WeaponId,
+  type MapData,
+  type MapId,
 } from '@shootme/shared';
-import { Player, nextColor } from '../players/Player.js';
+import { Player, NAME_COLORS } from '../players/Player.js';
 import { castHitscanRay, jitterDirection } from '../weapons/raycast.js';
-
-function randomSpawn(existing: Player[]): { x: number; y: number; z: number } {
-  let best = SPAWN_POINTS[0];
-  let bestScore = -Infinity;
-  const candidates = [...SPAWN_POINTS].sort(() => Math.random() - 0.5).slice(0, 5);
-  for (const candidate of candidates) {
-    let minDist = Infinity;
-    for (const p of existing) {
-      if (!p.alive) continue;
-      const d = Math.hypot(p.pos.x - candidate.x, p.pos.z - candidate.z);
-      minDist = Math.min(minDist, d);
-    }
-    const score = minDist === Infinity ? 999 : minDist;
-    if (score > bestScore) {
-      bestScore = score;
-      best = candidate;
-    }
-  }
-  return { x: best.x, y: best.y, z: best.z };
-}
 
 function toPublicState(p: Player): PlayerPublicState {
   return {
@@ -56,13 +37,43 @@ export class Room {
   players = new Map<string, Player>();
   matchEndsAt = Date.now() + MATCH_DURATION_MS;
   matchOver = false;
+  readonly map: MapData;
 
+  private colorCursor = 0;
   private snapshotTimer: ReturnType<typeof setInterval>;
   private matchCheckTimer: ReturnType<typeof setInterval>;
 
-  constructor() {
+  constructor(mapId: MapId) {
+    this.map = MAPS[mapId];
     this.snapshotTimer = setInterval(() => this.broadcastSnapshot(), 1000 / NETWORK.snapshotSendHz);
     this.matchCheckTimer = setInterval(() => this.checkMatchEnd(), 1000);
+  }
+
+  private nextColor(): number {
+    const c = NAME_COLORS[this.colorCursor % NAME_COLORS.length];
+    this.colorCursor++;
+    return c;
+  }
+
+  private randomSpawn(existing: Player[]): { x: number; y: number; z: number } {
+    const spawnPoints = this.map.spawnPoints;
+    let best = spawnPoints[0];
+    let bestScore = -Infinity;
+    const candidates = [...spawnPoints].sort(() => Math.random() - 0.5).slice(0, 5);
+    for (const candidate of candidates) {
+      let minDist = Infinity;
+      for (const p of existing) {
+        if (!p.alive) continue;
+        const d = Math.hypot(p.pos.x - candidate.x, p.pos.z - candidate.z);
+        minDist = Math.min(minDist, d);
+      }
+      const score = minDist === Infinity ? 999 : minDist;
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+    return { x: best.x, y: best.y, z: best.z };
   }
 
   private broadcast(msg: ServerMessage, exclude?: string) {
@@ -73,7 +84,13 @@ export class Room {
     }
   }
 
-  handleConnection(ws: WebSocket, id: string) {
+  // The routing layer (server/src/index.ts) has already consumed the client's
+  // first `join` message to decide which Room (map) this connection belongs to,
+  // so `name` arrives pre-parsed and the join happens immediately here; every
+  // message after this one flows through the normal `ws.on('message')` handler.
+  handleConnection(ws: WebSocket, id: string, name: string) {
+    this.handleJoin(id, ws, name);
+
     ws.on('message', (raw: Buffer) => {
       let msg: ClientMessage;
       try {
@@ -81,7 +98,7 @@ export class Room {
       } catch {
         return;
       }
-      this.handleMessage(id, ws, msg);
+      this.handleMessage(id, msg);
     });
 
     ws.on('close', () => {
@@ -89,11 +106,8 @@ export class Room {
     });
   }
 
-  private handleMessage(id: string, ws: WebSocket, msg: ClientMessage) {
-    if (msg.t === 'join') {
-      this.handleJoin(id, ws, msg.name);
-      return;
-    }
+  private handleMessage(id: string, msg: ClientMessage) {
+    if (msg.t === 'join') return; // already handled by handleConnection for this connection
 
     const player = this.players.get(id);
     if (!player) return;
@@ -101,8 +115,9 @@ export class Room {
     switch (msg.t) {
       case 'input':
         if (player.alive) {
-          const clampedX = Math.max(-ARENA_HALF_SIZE, Math.min(ARENA_HALF_SIZE, msg.pos.x));
-          const clampedZ = Math.max(-ARENA_HALF_SIZE, Math.min(ARENA_HALF_SIZE, msg.pos.z));
+          const halfSize = this.map.halfSize;
+          const clampedX = Math.max(-halfSize, Math.min(halfSize, msg.pos.x));
+          const clampedZ = Math.max(-halfSize, Math.min(halfSize, msg.pos.z));
           player.pos = { x: clampedX, y: msg.pos.y, z: clampedZ };
           player.yaw = msg.yaw;
           player.pitch = msg.pitch;
@@ -123,9 +138,9 @@ export class Room {
   }
 
   private handleJoin(id: string, ws: WebSocket, name: string) {
-    const color = nextColor();
+    const color = this.nextColor();
     const player = new Player(id, ws, name, color);
-    player.pos = randomSpawn([...this.players.values()]);
+    player.pos = this.randomSpawn([...this.players.values()]);
     this.players.set(id, player);
 
     player.send({
@@ -133,7 +148,8 @@ export class Room {
       id,
       color,
       players: [...this.players.values()].map(toPublicState),
-      arenaHalfSize: ARENA_HALF_SIZE,
+      mapId: this.map.id,
+      arenaHalfSize: this.map.halfSize,
       matchEndsAt: this.matchEndsAt,
       killLimit: KILL_LIMIT,
     } satisfies ServerMessage);
@@ -201,7 +217,7 @@ export class Room {
 
     for (let i = 0; i < pelletCount; i++) {
       const pelletDir = def.spreadDeg ? jitterDirection(dir, def.spreadDeg) : dir;
-      const hit = castHitscanRay(origin, pelletDir, def.range, targets, player.id);
+      const hit = castHitscanRay(origin, pelletDir, def.range, targets, player.id, this.map.boxes);
       if (!hit) continue;
       const pelletDamage = Math.round(def.damage * (hit.headshot ? def.headshotMultiplier : 1));
       const existing = damagePerTarget.get(hit.targetId);
@@ -255,7 +271,7 @@ export class Room {
 
     setTimeout(() => {
       if (!this.players.has(victim.id)) return;
-      const pos = randomSpawn([...this.players.values()]);
+      const pos = this.randomSpawn([...this.players.values()]);
       victim.resetForRespawn(pos);
       this.broadcast({ t: 'respawn', id: victim.id, pos } satisfies ServerMessage);
     }, RESPAWN_DELAY_MS);
@@ -307,7 +323,7 @@ export class Room {
     for (const p of this.players.values()) {
       p.kills = 0;
       p.deaths = 0;
-      p.resetForRespawn(randomSpawn([]));
+      p.resetForRespawn(this.randomSpawn([]));
     }
     this.broadcast({ t: 'matchStart', matchEndsAt: this.matchEndsAt });
     for (const p of this.players.values()) {

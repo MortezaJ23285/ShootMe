@@ -2,6 +2,7 @@
 // set, one room, one game mode. Every message has a `t` (type) discriminant.
 
 import type { WeaponId } from './constants.js';
+import type { MapId } from './maps.js';
 
 export interface Vec3 {
   x: number;
@@ -28,6 +29,7 @@ export interface PlayerPublicState {
 export interface JoinMsg {
   t: 'join';
   name: string;
+  mapId: MapId;
 }
 
 export interface InputStateMsg {
@@ -67,6 +69,7 @@ export interface WelcomeMsg {
   id: string;
   color: number;
   players: PlayerPublicState[];
+  mapId: MapId;
   arenaHalfSize: number;
   matchEndsAt: number;
   killLimit: number;

@@ -1,4 +1,4 @@
-import { ARENA_BOXES, PLAYER_HEIGHT, PLAYER_RADIUS, Vec3, type ArenaBox } from '@shootme/shared';
+import { PLAYER_HEIGHT, PLAYER_RADIUS, Vec3, type ArenaBox } from '@shootme/shared';
 
 function normalize(v: Vec3): Vec3 {
   const len = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) || 1;
@@ -129,17 +129,21 @@ export interface RaycastHit {
 
 // Casts a ray from origin in dir (normalized) up to maxRange, ignoring `excludeId`.
 // Returns the nearest player hit, or null if a wall was hit first or nothing was hit.
+// `arenaBoxes` must be the calling Room's own map — with multiple concurrently
+// running Rooms (one per map), a shared/global box list would occlude shots
+// against the wrong map's walls.
 export function castHitscanRay(
   origin: Vec3,
   rawDir: Vec3,
   maxRange: number,
   targets: RaycastTarget[],
   excludeId: string,
+  arenaBoxes: ArenaBox[],
 ): RaycastHit | null {
   const dir = normalize(rawDir);
 
   let nearestWallDist = Infinity;
-  for (const box of ARENA_BOXES) {
+  for (const box of arenaBoxes) {
     const d = rayIntersectsBox(origin, dir, box);
     if (d !== null && d < nearestWallDist) nearestWallDist = d;
   }
